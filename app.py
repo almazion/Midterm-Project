@@ -1,152 +1,78 @@
-# ───────────────────────────────────────────────────────────
-#   Global Music Streaming Preferences – Streamlit App
-#   Place this file AND the CSV in the same repo directory.
-#   If the CSV is missing, the app will prompt an upload.
-# ───────────────────────────────────────────────────────────
-import streamlit as st
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
+import streamlit as st, pandas as pd, seaborn as sns, matplotlib.pyplot as plt
 from pathlib import Path
+sns.set_style("whitegrid")
 
 ###############################################################################
-# 1  LOAD DATA (from local file OR user upload) – cached
+# LOAD
 ###############################################################################
 @st.cache_data
-def load_data(csv_path: str | Path) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
-    # --- OPTIONAL: rename for convenience ---
-    df = df.rename(columns={
+def load(path):
+    df = pd.read_csv(path)
+    return df.rename(columns={                       # ← ערכי ברירת-מחדל
         "Minutes Streamed Per Day": "minutes",
-        "Discover Weekly Engagement (%)": "discover_eng",
-        "Repeat Song Rate (%)": "repeat_rate",
-        "Listening Time (Morning/Afternoon/Night)": "listen_time",
+        "Discover Weekly Engagement (%)": "discover",
+        "Listening Time (Morning/Afternoon/Night)": "time_day",
         "Top Genre": "genre",
-        "Age": "age",
-        "Country": "country",
-        "Subscription Type": "sub_type",
+        "Age": "age", "Country": "country"
     })
-    return df
 
-DEFAULT_CSV = Path("Global_Music_Streaming_Listener_Preferences.csv")
-if DEFAULT_CSV.exists():
-    df = load_data(DEFAULT_CSV)
+CSV = Path("Global_Music_Streaming_Listener_Preferences.csv")
+if CSV.exists():
+    df = load(CSV)
 else:
-    st.sidebar.warning("CSV file not found – please upload 👇")
-    uploaded = st.sidebar.file_uploader("Upload CSV", type="csv")
-    if uploaded:
-        df = load_data(uploaded)
-    else:
-        st.stop()
+    f = st.file_uploader("Upload CSV", type="csv")
+    if not f: st.stop()
+    df = load(f)
 
 ###############################################################################
-# 2  SIDEBAR – NAVIGATION
+# NAV
 ###############################################################################
-st.sidebar.title("🎵 Streaming Analytics")
-page = st.sidebar.radio(
-    "Select a view",
-    [
-        "Dataset overview",
-        "Daily listening time",
-        "Discover Weekly engagement",
-        "Age vs. listening time",
-        "Genres by country",
-        "Genres by time-of-day",
-    ],
+page = st.sidebar.selectbox("View", (
+    "Overview",
+    "Daily listening time",
+    "Discover engagement",
+    "Genres × Country",
+    "Genres × Time-of-day")
 )
 
 ###############################################################################
-# 3  MAIN PAGES & PLOTS
+# VIEWS
 ###############################################################################
-sns.set_style("whitegrid")
+def overview():
+    st.header("Dataset preview"); st.dataframe(df.head())
+    st.subheader("Describe()"); st.write(df.describe())
 
-def show_df_overview():
-    st.header("👀 Quick preview of the dataset")
-    st.dataframe(df.head())
-    st.subheader("Summary statistics")
-    st.write(df.describe())
-
-def hist_minutes():
-    st.header("⏰ Distribution of daily listening time")
+def hist(col, title, color):
+    st.header(title)
     fig, ax = plt.subplots()
-    sns.histplot(df["minutes"], bins=30, kde=True, color="#88C0D0", ax=ax)
-    ax.set_xlabel("Minutes per day")
-    ax.set_ylabel("Users")
+    sns.histplot(df[col], bins=30, kde=True, color=color, ax=ax)
     st.pyplot(fig)
 
-def hist_discover():
-    st.header("⭐ Distribution of Discover Weekly engagement (%)")
-    fig, ax = plt.subplots()
-    sns.histplot(df["discover_eng"], bins=25, kde=True, color="#F4A261", ax=ax)
-    ax.set_xlabel("Engagement (%)")
-    ax.set_ylabel("Users")
-    st.pyplot(fig)
-
-def scatter_age_minutes():
-    st.header("📈 Daily listening time by age")
-    fig, ax = plt.subplots()
-    sns.scatterplot(data=df, x="age", y="minutes", alpha=0.3, s=40, ax=ax)
-    sns.regplot(data=df, x="age", y="minutes", scatter=False, color="red", ax=ax)
-    ax.set_xlabel("Age")
-    ax.set_ylabel("Minutes per day")
-    st.pyplot(fig)
-
-def genres_by_country():
-    st.header("🌍 Top genres across countries")
-    # optional: select specific countries
-    countries = st.multiselect(
-        "Filter countries (leave empty = all)",
-        sorted(df["country"].unique()),
-    )
-    data = df if not countries else df[df["country"].isin(countries)]
-    counts = (
-        data.groupby(["genre", "country"])
-        .size()
-        .reset_index(name="users")
-    )
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(
-        data=counts,
-        x="genre", y="users", hue="country", ax=ax
-    )
-    ax.set_xlabel("Genre")
-    ax.set_ylabel("Users")
+def genres_country():
+    st.header("Genres across countries")
+    sel = st.multiselect("Filter countries", sorted(df.country.unique()))
+    data = df if not sel else df[df.country.isin(sel)]
+    fig, ax = plt.subplots(figsize=(10,5))
+    sns.countplot(data=data, x="genre", hue="country", ax=ax)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-    ax.legend(title="Country", bbox_to_anchor=(1.02, 1), loc="upper left")
     st.pyplot(fig)
 
-def genres_by_time():
-    st.header("⏰ Preferred genres by time-of-day")
-    counts = (
-        df.groupby(["genre", "listen_time"])
-          .size()
-          .reset_index(name="users")
-    )
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(
-        data=counts,
-        x="genre", y="users", hue="listen_time", ax=ax
-    )
-    ax.set_xlabel("Genre")
-    ax.set_ylabel("Users")
+def genres_time():
+    st.header("Genres by time-of-day")
+    fig, ax = plt.subplots(figsize=(10,5))
+    sns.countplot(data=df, x="genre", hue="time_day", ax=ax)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-    ax.legend(title="Time of day", bbox_to_anchor=(1.02, 1), loc="upper left")
     st.pyplot(fig)
 
-# page router
-PAGE_FUNCS = {
-    "Dataset overview": show_df_overview,
-    "Daily listening time": hist_minutes,
-    "Discover Weekly engagement": hist_discover,
-    "Age vs. listening time": scatter_age_minutes,
-    "Genres by country": genres_by_country,
-    "Genres by time-of-day": genres_by_time,
+PAGES = {
+    "Overview": overview,
+    "Daily listening time": lambda: hist("minutes", "Distribution of daily listening time", "#5DADE2"),
+    "Discover engagement": lambda: hist("discover", "Distribution of Discover Weekly engagement (%)", "#F4A261"),
+    "Genres × Country": genres_country,
+    "Genres × Time-of-day": genres_time
 }
-PAGE_FUNCS[page]()
+PAGES[page]()
 
-###############################################################################
-# 4  FOOTER
-###############################################################################
 st.markdown("---")
-st.caption("Built with ♥ using Streamlit • Data: Global Music Streaming Listener Preferences")
+st.caption("Built with Streamlit • Global Music Streaming Preferences")
 
